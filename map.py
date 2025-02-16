@@ -2,8 +2,23 @@ import overpy
 import requests
 import os
 
+from typing import Tuple, List, Dict
 
-def get_locations(lat:float, lon: float, dist: int = 1000, location_type: str = 'restaurant'):
+
+def get_locations(lat:float, lon: float, dist: int = 1000, location_type: str = 'restaurant') -> List[Dict]:
+    """
+    Get all locations of a certain type that lie near to a certain point, using OpenStreetMap.
+
+    :param lat: Latitude of the point
+    :param lon: Longitude of the point
+    :param dist: (optional) Maximum distance of the locations from the selected point in m. Default: 1000
+    :param location_type: (optional) Type of the location that is returned.#
+        Currently supported: restaurant (default), park
+    :return: List of Dictionaries which contain three entries for each location:
+                                - name: Name of the location
+                                - lon: Latitude
+                                - lat: Longitude
+    """
     api = overpy.Overpass()
 
     if location_type == 'restaurant':
@@ -24,15 +39,34 @@ def get_locations(lat:float, lon: float, dist: int = 1000, location_type: str = 
     ret = []
 
     for node in result.nodes:
-        ret.append((node.tags['name'], node.lat, node.lon))
+        ret.append({'name' : node.tags['name'], 'lon' : node.lat, 'lat' : node.lon})
 
     return ret
 
 
-def get_way(lon_start, lat_start, lon_target, lat_target, mobility_mode: str = None):
-    params = {'api_key' : os.environ['OPRS_API_key'],
-              'start' : f'{lon_start},{lat_start}',
-              'end': f'{lon_target},{lat_target}'}
+def get_way(lat_start, lon_start, lat_target, lon_target, mobility_mode: str = None) -> List[Dict]:
+    """
+    Maps a way between a start point and an endpoint and returns the distance and time between two points.
+
+    :param lon_start: Longitude of start point
+    :param lat_start: Latitude of start point
+    :param lon_target: Longitude of target
+    :param lat_target: Latitude of target
+    :param mobility_mode: (optional) Can be used to select the current vehicle the user has.
+        When not given computes values for walking, cycle and car.
+        Possible values: foot, cycle, car,
+                        (also all profiles from https://giscience.github.io/openrouteservice-r/reference/ors_profile.html)
+    :return: List of dictionaries containing the distance and time of the way between the two locations
+    """
+
+    try:
+        params = {'api_key' : os.environ['OPRS_API_KEY'],
+                  'start' : f'{lon_start},{lat_start}',
+                  'end': f'{lon_target},{lat_target}'}
+    except KeyError:
+        print('You must first set the Environment variable "OPRS_API_KEY"'
+              ' with your Openrouteservice API key. Aborting')
+        return
 
     profile = ["foot-walking", "cycling-regular", "driving-car"]
     mapping = {'foot': 0, 'cycle': 1, 'car': 2}
@@ -61,6 +95,21 @@ def get_way(lon_start, lat_start, lon_target, lat_target, mobility_mode: str = N
     return res
 
 
-def mapping_call(lat: float, lon: float, radius: int, location_type: str,mobility_mode : str):
+def mapping_call(lat: float, lon: float, radius: int = 1000, location_type: str = 'restaurant',mobility_mode : str = 'foot'):
+    """
+    Function that can be called from the front-end and returns a list of dictionaries with all information for
+    the selected locations around the desired point. The number of locations is limited to 40, due to the API key usage limit.
+
+    :param lat: Latitude of the point
+    :param lon: Longitude of the point
+    :param radius: Maximum distance of the locations from the selected point in m. Default: 1000
+    :param location_type: (optional) Type of the location that is returned.#
+        Currently supported: restaurant (default), park
+    :param mobility_mode: (optional) Can be used to select the current vehicle the user has.
+        When not given computes values for walking, cycle and car.
+        Possible values: foot, cycle, car,
+                        (also all profiles from https://giscience.github.io/openrouteservice-r/reference/ors_profile.html)
+    :return: Dictionaries with five keys: name, lon, lat, distance and duration.
+    """
     locs = get_locations(lat, lon, radius, location_type)[:40]
-    return [{'name' : l[0], 'lat' : l[1], 'lon' : l[2], **get_way(lat, lon, l[1], l[2], mobility_mode)} for l in locs]
+    return [{**l, **get_way(lat, lon, l['lat'], l['lon'], mobility_mode)} for l in locs]
