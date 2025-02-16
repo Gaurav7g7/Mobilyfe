@@ -78,9 +78,8 @@ def add_events(events: List, user_id : str, MongoDBclient: Optional[MongoClient]
 
 
 if __name__ == "__main__":
-    ics_path = Path("../calendar.ics")
+    ics_path = Path("./calendar.ics")
     user_id = '1354'
 
     events = ics_extract_events(ics_path)
-    events.append(ics_extract_events(Path("../sbange1989@gmail.com.ics")))
     add_events(events, user_id)
