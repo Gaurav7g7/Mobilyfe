@@ -93,7 +93,7 @@ def get_way(lat_start, lon_start, lat_target, lon_target, mobility_mode: str = N
             res.append(data['features'][0]['properties']['summary'])
         else:
             print(f'Request failed. Status Code: {status_code}')
-            return
+            return [dict()]
 
     for r in res:
         print(r['distance'], r['duration'])
