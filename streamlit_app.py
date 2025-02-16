@@ -10,16 +10,18 @@ import requests
 from typing import List, Dict
 from datetime import datetime
 import time
+from quickstart import fetch_calendar_events
+import os
+
+from map import mapping_call
 
 def configure_page():
     st.set_page_config(page_title="Mobilyfe Calendar", page_icon="📆")
-    
-    # Initialize session state
     if "events" not in st.session_state:
-        st.session_state.events = [
-            {"title": "Event 1", "color": "#FF6C6C", "start": "2023-07-03", "end": "2023-07-05", "resourceId": "a"},
-            {"title": "Event 2", "color": "#FFBD45", "start": "2023-07-01", "end": "2023-07-10", "resourceId": "b"},
-        ]
+        temp = [{"title" : event[0], "start" : str(event[1]).replace(" ", "T"), "end" : str(event[2]).replace(" ", "T")}
+                                    for event in fetch_calendar_events()]
+
+        st.session_state.events = temp
     if "health_data" not in st.session_state:
         st.session_state.health_data = []
 
@@ -118,7 +120,6 @@ def display_calendar():
 
 def display_health_dashboard():
     st.markdown("### Health Dashboard 📊")
-
     bpm = st.number_input("Enter your heart rate (BPM):", min_value=0)
     steps = st.number_input("Enter your steps for the day:", min_value=0)
     sleep = st.number_input("Enter your sleep duration (hours):", min_value=0.0, step=0.1)
@@ -162,15 +163,14 @@ def display_health_dashboard():
             last_week.set_index("date").plot(kind='bar', ax=ax)
             st.pyplot(fig)
 
-def find_locations(lat: float, lon: float, radius: int, location_type: str, mobility_mode: str) -> List[Dict]:
-    # Get API key from Streamlit secrets or environment variable
+def find_locations_old(lat: float, lon: float, radius: int, location_type: str, mobility_mode: str) -> List[Dict]:
     api_key = st.secrets.get("OPENROUTESERVICE_API_KEY", "")
     if not api_key:
         st.error("OpenRouteService API key not configured!")
         return []
-    
+
     client = ors.Client(key=api_key)
-    
+
     try:
         query = f"""
         [out:json];
@@ -179,7 +179,7 @@ def find_locations(lat: float, lon: float, radius: int, location_type: str, mobi
         );
         out body;
         """
-        
+
         response = requests.get(
             "https://overpass-api.de/api/interpreter",
             params={"data": query},
@@ -187,7 +187,7 @@ def find_locations(lat: float, lon: float, radius: int, location_type: str, mobi
         )
         response.raise_for_status()
         data = response.json()
-        
+
         results = []
         for element in data['elements']:
             try:
@@ -196,7 +196,7 @@ def find_locations(lat: float, lon: float, radius: int, location_type: str, mobi
                     profile=mobility_mode,
                     format='geojson'
                 )
-                
+
                 results.append({
                     'name': element.get('tags', {}).get('name', 'Unnamed'),
                     'lon': element['lon'],
@@ -204,15 +204,14 @@ def find_locations(lat: float, lon: float, radius: int, location_type: str, mobi
                     'distance': route['features'][0]['properties']['summary']['distance'],
                     'duration': route['features'][0]['properties']['summary']['duration']
                 })
-                # Add small delay to avoid rate limiting
                 time.sleep(0.1)
-                
+
             except Exception as e:
                 st.warning(f"Could not calculate route for {element.get('tags', {}).get('name', 'Unnamed')}: {str(e)}")
                 continue
-                
+
         return results
-        
+
     except requests.exceptions.RequestException as e:
         st.error(f"Error fetching locations: {str(e)}")
         return []
@@ -222,7 +221,7 @@ def find_locations(lat: float, lon: float, radius: int, location_type: str, mobi
 
 def display_location_finder():
     st.markdown("### Location Finder 🗺️")
-    
+
     lat = st.number_input("Enter latitude:", value=0.0, step=0.000001, format="%.6f")
     lon = st.number_input("Enter longitude:", value=0.0, step=0.000001, format="%.6f")
     radius = st.number_input("Enter radius (in meters):", value=1000, min_value=100, step=100)
@@ -230,62 +229,104 @@ def display_location_finder():
     mobility_mode = st.selectbox("Select mobility mode:", ["foot", "cycle", "car"])
 
     if st.button("Find Locations"):
-        results = find_locations(lat, lon, radius, location_type, mobility_mode)
+        results = mapping_call(lat, lon, radius, location_type, mobility_mode)
         display_results(results, lat, lon)
+
 
 def display_results(results: List[Dict], center_lat: float, center_lon: float):
     if not results:
         st.warning("No locations found in the specified area.")
         return
-        
+
     st.write(f"Found {len(results)} locations:")
     
-    try:
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
-        folium.Marker(
-            [center_lat, center_lon],
-            popup="Your Location",
-            icon=folium.Icon(color='red')
-        ).add_to(m)
-        
-        for result in results:
-            folium.Marker(
-                [result['lat'], result['lon']],
-                popup=f"""
-                    <b>{result['name']}</b><br>
-                    Distance: {result['distance']:.0f}m<br>
-                    Duration: {result['duration']/60:.1f}min
-                """
-            ).add_to(m)
-        
-        st_folium(m)
-        
-        # Display results in a more readable format
-        for result in results:
-            st.write(
-                f"### {result['name']}\n"
-                f"- Distance: {result['distance']:.0f}m\n"
-                f"- Duration: {result['duration']/60:.1f} minutes"
-            )
-            
-    except Exception as e:
-        st.error(f"Error displaying map: {str(e)}")
+    # Convert results to DataFrame for better display
+    df = pd.DataFrame(results)
+    
+    # Format distance and duration
+    df['distance'] = df['distance'].round(0).astype(int)
+    df['duration'] = (df['duration'] / 60).round(1)
+    
+    # Rename columns for better readability
+    df = df.rename(columns={
+        'name': 'Name',
+        'distance': 'Distance (m)',
+        'duration': 'Duration (min)',
+        'lat': 'Latitude',
+        'lon': 'Longitude'
+    })
+    
+    # Reorder columns
+    columns = ['Name', 'Distance (m)', 'Duration (min)', 'Latitude', 'Longitude']
+    df = df[columns]
+    
+    # Display as a Streamlit table
+    st.dataframe(
+        df,
+        column_config={
+            "Name": st.column_config.TextColumn("Name", width="medium"),
+            "Distance (m)": st.column_config.NumberColumn("Distance (m)", format="%d"),
+            "Duration (min)": st.column_config.NumberColumn("Duration (min)", format="%.1f"),
+            "Latitude": st.column_config.NumberColumn("Latitude", format="%.6f"),
+            "Longitude": st.column_config.NumberColumn("Longitude", format="%.6f")
+        },
+        hide_index=True
+    )
 
+
+
+# def display_results(results: List[Dict], center_lat: float, center_lon: float):
+#     if not results:
+#         st.warning("No locations found in the specified area.")
+#         return
+
+#     st.write(f"Found {len(results)} locations:")
+
+#     try:
+#         m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
+#         folium.Marker(
+#             [center_lat, center_lon],
+#             popup="Your Location",
+#             icon=folium.Icon(color='red')
+#         ).add_to(m)
+
+#         for result in results:
+#             folium.Marker(
+#                 [result['lat'], result['lon']],
+#                 popup=f"""
+#                     <b>{result['name']}</b><br>
+#                     Distance: {result['distance']:.0f}m<br>
+#                     Duration: {result['duration']/60:.1f}min
+#                 """
+#             ).add_to(m)
+
+#         st_folium(m)
+
+#         for result in results:
+#             st.write(
+#                 f"### {result['name']}\n"
+#                 f"- Distance: {result['distance']:.0f}m\n"
+#                 f"- Duration: {result['duration']/60:.1f} minutes"
+#             )
+
+    # except Exception as e:
+    #     st.error(f"Error displaying map: {str(e)}")
 
 def main():
+    file = open("key.txt", "r")
+    api_key = str(file.read())
+    os.environ["OPRS_API_KEY"] = api_key
+    
     configure_page()
     display_title()
     page = display_sidebar()
-
     if page == "Calendar":
         display_calendar()
     elif page == "Health Dashboard":
         display_health_dashboard()
     elif page == "Location Finder":
         display_location_finder()
-
     st.write("Thank you Hacklahoma! -Gaurav, Maya, Simon, and Houston")
 
 if __name__ == "__main__":
     main()
-

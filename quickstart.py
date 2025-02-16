@@ -1,16 +1,17 @@
 import datetime
 import os.path
-
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from calendar_import import add_events
+
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
-def main():
+def fetch_calendar_events():
     """Shows basic usage of the Google Calendar API.
     Stores the event name, start time, and end time of all events up to May 10, 2025 in a list.
     """
@@ -62,14 +63,27 @@ def main():
 
         if not events:
             print("No upcoming events found.")
-            return
+            return []
 
         # Append event details to the list
         for event in events:
-            start = event["start"].get("dateTime", event["start"].get("date"))
-            end = event["end"].get("dateTime", event["end"].get("date"))
+            start_str = event["start"].get("dateTime", event["start"].get("date"))
+            if len(start_str) == 10:
+                format = "%Y-%m-%d"
+            else:
+                format = "%Y-%m-%dT%H:%M:%S%z"	
+            start = datetime.datetime.strptime(start_str, format)
+            
+            end_str = event["end"].get("dateTime", event["end"].get("date"))
+            if len(end_str) == 10:
+                format = "%Y-%m-%d"
+            else:
+                format = "%Y-%m-%dT%H:%M:%S%z"	
+            end = datetime.datetime.strptime(end_str, format)
+
             summary = event.get("summary", "No title")
-            events_list.append({"summary": summary, "start": start, "end": end})
+            events_list.append((summary, start, end))
+
 
         # Handle pagination if there are more events
         while "nextPageToken" in events_result:
@@ -88,17 +102,32 @@ def main():
             )
             events = events_result.get("items", [])
             for event in events:
-                start = event["start"].get("dateTime", event["start"].get("date"))
-                end = event["end"].get("dateTime", event["end"].get("date"))
-                summary = event.get("summary", "No title")
-                events_list.append({"summary": summary, "start": start, "end": end})
+                            start_str = event["start"].get("dateTime", event["start"].get("date"))
+            if len(start_str) == 10:
+                format = "%Y-%m-%d"
+            else:
+                format = "%Y-%m-%dT%H:%M:%S%z"	
+            start = datetime.datetime.strptime(start_str, format)
+            
+            end_str = event["end"].get("dateTime", event["end"].get("date"))
+            if len(end_str) == 10:
+                format = "%Y-%m-%d"
+            else:
+                format = "%Y-%m-%dT%H:%M:%S%z"	
+            end = datetime.datetime.strptime(end_str, format)
 
-        # Print the list of events
-        for event in events_list:
-            print(f"Event: {event['summary']}, Start: {event['start']}, End: {event['end']}")
+            summary = event.get("summary", "No title")
+            events_list.append((summary, start, end))
+
+        add_events(events_list, "1234")
+
+        return events_list
 
     except HttpError as error:
         print(f"An error occurred: {error}")
+        return []
 
 if __name__ == "__main__":
-    main()
+    events = fetch_calendar_events()
+    for event in events:
+        print(f"Event: {event[0]}, Start: {event[1]}, End: {event[2]}")
