@@ -3,20 +3,35 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from streamlit_calendar import calendar
+from streamlit_folium import st_folium
+import folium
+import openrouteservice as ors
+import requests
+from typing import List, Dict
+from datetime import datetime
+import time
 
-# Page configuration
-st.set_page_config(page_title="Mobilyfe Calendar", page_icon="📆")
+def configure_page():
+    st.set_page_config(page_title="Mobilyfe Calendar", page_icon="📆")
+    
+    # Initialize session state
+    if "events" not in st.session_state:
+        st.session_state.events = [
+            {"title": "Event 1", "color": "#FF6C6C", "start": "2023-07-03", "end": "2023-07-05", "resourceId": "a"},
+            {"title": "Event 2", "color": "#FFBD45", "start": "2023-07-01", "end": "2023-07-10", "resourceId": "b"},
+        ]
+    if "health_data" not in st.session_state:
+        st.session_state.health_data = []
 
-# Title and description
-st.title("Mobilyfe")
-st.markdown("## Your Time, Your Mind, Your Lyfe")
+def display_title():
+    st.title("Mobilyfe")
+    st.markdown("## Your Time, Your Mind, Your Lyfe")
 
-# Sidebar for navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Calendar", "Health Dashboard"])
+def display_sidebar():
+    st.sidebar.title("Navigation")
+    return st.sidebar.radio("Go to", ["Calendar", "Health Dashboard", "Location Finder"])
 
-# Calendar page
-if page == "Calendar":
+def display_calendar():
     st.markdown("### Calendar 📆")
     mode = st.selectbox(
         "Calendar Mode:",
@@ -32,15 +47,9 @@ if page == "Calendar":
         ),
     )
 
-    events = [
-        {"title": "Event 1", "color": "#FF6C6C", "start": "2023-07-03", "end": "2023-07-05", "resourceId": "a"},
-        {"title": "Event 2", "color": "#FFBD45", "start": "2023-07-01", "end": "2023-07-10", "resourceId": "b"},
-        # Add more events as needed
-    ]
     calendar_resources = [
         {"id": "a", "building": "Building A", "title": "Room A"},
         {"id": "b", "building": "Building A", "title": "Room B"},
-        # Add more resources as needed
     ]
 
     calendar_options = {
@@ -91,7 +100,7 @@ if page == "Calendar":
             calendar_options.update({"initialView": "multiMonthYear"})
 
     state = calendar(
-        events=st.session_state.get("events", events),
+        events=st.session_state.events,
         options=calendar_options,
         custom_css="""
         .fc-event-past { opacity: 0.8; }
@@ -103,26 +112,20 @@ if page == "Calendar":
     )
 
     if state.get("eventsSet") is not None:
-        st.session_state["events"] = state["eventsSet"]
+        st.session_state.events = state["eventsSet"]
 
     st.write(state)
 
-# Health Dashboard page
-elif page == "Health Dashboard":
+def display_health_dashboard():
     st.markdown("### Health Dashboard 📊")
 
-    # Input fields for user data
     bpm = st.number_input("Enter your heart rate (BPM):", min_value=0)
     steps = st.number_input("Enter your steps for the day:", min_value=0)
     sleep = st.number_input("Enter your sleep duration (hours):", min_value=0.0, step=0.1)
     meditation = st.number_input("Enter your meditation duration (minutes):", min_value=0)
 
-    # Store the input data
-    if "health_data" not in st.session_state:
-        st.session_state["health_data"] = []
-
     if st.button("Submit"):
-        st.session_state["health_data"].append({
+        st.session_state.health_data.append({
             "date": pd.Timestamp.now().date(),
             "bpm": bpm,
             "steps": steps,
@@ -131,16 +134,14 @@ elif page == "Health Dashboard":
         })
         st.success("Data submitted successfully!")
 
-    # Display the input data
     st.write("### Today's Data")
     st.write(f"Heart Rate: {bpm} BPM")
     st.write(f"Steps: {steps}")
     st.write(f"Sleep: {sleep} hours")
     st.write(f"Meditation: {meditation} minutes")
 
-    # Calculate weekly averages
-    if st.session_state["health_data"]:
-        df = pd.DataFrame(st.session_state["health_data"])
+    if st.session_state.health_data:
+        df = pd.DataFrame(st.session_state.health_data)
         df["date"] = pd.to_datetime(df["date"])
         last_week = df[df["date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7))]
 
@@ -153,22 +154,138 @@ elif page == "Health Dashboard":
             st.write(f"Sleep: {weekly_averages['sleep']:.2f} hours")
             st.write(f"Meditation: {weekly_averages['meditation']:.2f} minutes")
 
-            # Convert date format to month abbreviated-day (e.g., Jan-15)
             last_week["date"] = last_week["date"].dt.strftime('%b-%d')
 
-            # Plotting the data as a bar chart with pastel colors
             st.write("### Weekly Data Chart")
             sns.set_palette("pastel")
             fig, ax = plt.subplots()
             last_week.set_index("date").plot(kind='bar', ax=ax)
             st.pyplot(fig)
 
-           
+def find_locations(lat: float, lon: float, radius: int, location_type: str, mobility_mode: str) -> List[Dict]:
+    # Get API key from Streamlit secrets or environment variable
+    api_key = st.secrets.get("OPENROUTESERVICE_API_KEY", "")
+    if not api_key:
+        st.error("OpenRouteService API key not configured!")
+        return []
+    
+    client = ors.Client(key=api_key)
+    
+    try:
+        query = f"""
+        [out:json];
+        (
+          node["amenity"="{location_type}"](around:{radius},{lat},{lon});
+        );
+        out body;
+        """
+        
+        response = requests.get(
+            "https://overpass-api.de/api/interpreter",
+            params={"data": query},
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        results = []
+        for element in data['elements']:
+            try:
+                route = client.directions(
+                    coordinates=[[lon, lat], [element['lon'], element['lat']]],
+                    profile=mobility_mode,
+                    format='geojson'
+                )
+                
+                results.append({
+                    'name': element.get('tags', {}).get('name', 'Unnamed'),
+                    'lon': element['lon'],
+                    'lat': element['lat'],
+                    'distance': route['features'][0]['properties']['summary']['distance'],
+                    'duration': route['features'][0]['properties']['summary']['duration']
+                })
+                # Add small delay to avoid rate limiting
+                time.sleep(0.1)
+                
+            except Exception as e:
+                st.warning(f"Could not calculate route for {element.get('tags', {}).get('name', 'Unnamed')}: {str(e)}")
+                continue
+                
+        return results
+        
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching locations: {str(e)}")
+        return []
+    except Exception as e:
+        st.error(f"Unexpected error: {str(e)}")
+        return []
 
-# API reference
-st.markdown("## API reference")
-st.help(calendar)
+def display_location_finder():
+    st.markdown("### Location Finder 🗺️")
+    
+    lat = st.number_input("Enter latitude:", value=0.0, step=0.000001, format="%.6f")
+    lon = st.number_input("Enter longitude:", value=0.0, step=0.000001, format="%.6f")
+    radius = st.number_input("Enter radius (in meters):", value=1000, min_value=100, step=100)
+    location_type = st.selectbox("Select location type:", ["restaurant", "park", "sports", "socialize"])
+    mobility_mode = st.selectbox("Select mobility mode:", ["foot", "cycle", "car"])
 
-st.write(
-    "Thank you Hacklahoma! -Gaurav, Maya, Simon, and Houston"
-)
+    if st.button("Find Locations"):
+        results = find_locations(lat, lon, radius, location_type, mobility_mode)
+        display_results(results, lat, lon)
+
+def display_results(results: List[Dict], center_lat: float, center_lon: float):
+    if not results:
+        st.warning("No locations found in the specified area.")
+        return
+        
+    st.write(f"Found {len(results)} locations:")
+    
+    try:
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
+        folium.Marker(
+            [center_lat, center_lon],
+            popup="Your Location",
+            icon=folium.Icon(color='red')
+        ).add_to(m)
+        
+        for result in results:
+            folium.Marker(
+                [result['lat'], result['lon']],
+                popup=f"""
+                    <b>{result['name']}</b><br>
+                    Distance: {result['distance']:.0f}m<br>
+                    Duration: {result['duration']/60:.1f}min
+                """
+            ).add_to(m)
+        
+        st_folium(m)
+        
+        # Display results in a more readable format
+        for result in results:
+            st.write(
+                f"### {result['name']}\n"
+                f"- Distance: {result['distance']:.0f}m\n"
+                f"- Duration: {result['duration']/60:.1f} minutes"
+            )
+            
+    except Exception as e:
+        st.error(f"Error displaying map: {str(e)}")
+
+
+def main():
+    configure_page()
+    display_title()
+    page = display_sidebar()
+
+    if page == "Calendar":
+        display_calendar()
+    elif page == "Health Dashboard":
+        display_health_dashboard()
+    elif page == "Location Finder":
+        display_location_finder()
+
+    st.write("Thank you Hacklahoma! -Gaurav, Maya, Simon, and Houston")
+
+if __name__ == "__main__":
+    main()
+
