@@ -3,7 +3,7 @@ import requests
 import os
 
 
-def get_location(lat:float, lon: float, dist: int = 1000, location_type: str = 'restaurant'):
+def get_locations(lat:float, lon: float, dist: int = 1000, location_type: str = 'restaurant'):
     api = overpy.Overpass()
 
     if location_type == 'restaurant':
@@ -29,14 +29,19 @@ def get_location(lat:float, lon: float, dist: int = 1000, location_type: str = '
     return ret
 
 
-def get_way(lon_start, lat_start, lon_target, lat_target):
+def get_way(lon_start, lat_start, lon_target, lat_target, mobility_mode: str = None):
     params = {'api_key' : os.environ['OPRS_API_key'],
               'start' : f'{lon_start},{lat_start}',
               'end': f'{lon_target},{lat_target}'}
 
-    print(params)
-
     profile = ["foot-walking", "cycling-regular", "driving-car"]
+    mapping = {'foot': 0, 'cycle': 1, 'car': 2}
+
+    if mobility_mode is not None:
+        try:
+            profile = list(profile[mapping[mobility_mode]])
+        except KeyError:
+            profile = [mobility_mode,]
     res = []
 
     for p in profile:
@@ -54,3 +59,8 @@ def get_way(lon_start, lat_start, lon_target, lat_target):
         print(r['distance'], r['duration'])
 
     return res
+
+
+def mapping_call(lat: float, lon: float, radius: int, location_type: str,mobility_mode : str):
+    locs = get_locations(lat, lon, radius, location_type)[:40]
+    return [{'name' : l[0], 'lat' : l[1], 'lon' : l[2], **get_way(lat, lon, l[1], l[2], mobility_mode)} for l in locs]
