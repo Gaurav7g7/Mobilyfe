@@ -2,7 +2,7 @@ import overpy
 import requests
 import os
 
-from typing import Tuple, List, Dict
+from typing import List, Dict
 
 
 def get_locations(lat:float, lon: float, dist: int = 1000, location_type: str = 'restaurant') -> List[Dict]:
@@ -72,7 +72,7 @@ def get_way(lat_start, lon_start, lat_target, lon_target, mobility_mode: str = N
     except KeyError:
         print('You must first set the Environment variable "OPRS_API_KEY"'
               ' with your Openrouteservice API key. Aborting')
-        return
+        return []
 
     profile = ["foot-walking", "cycling-regular", "driving-car"]
     mapping = {'foot': 0, 'cycle': 1, 'car': 2}
@@ -82,7 +82,7 @@ def get_way(lat_start, lon_start, lat_target, lon_target, mobility_mode: str = N
             profile = list(profile[mapping[mobility_mode]])
         except KeyError:
             profile = [mobility_mode,]
-    res = []
+    res = [dict()]
 
     for p in profile:
         url = f'https://api.openrouteservice.org/v2/directions/{p}'
@@ -109,7 +109,7 @@ def mapping_call(lat: float, lon: float, radius: int = 1000, location_type: str 
     :param lat: Latitude of the point
     :param lon: Longitude of the point
     :param radius: Maximum distance of the locations from the selected point in m. Default: 1000
-    :param location_type: (optional) Type of the location that is returned.#
+    :param location_type: (optional) Type of the location that is returned.
         Currently supported: restaurant (default), park, sports, socialize
     :param mobility_mode: (optional) Can be used to select the current vehicle the user has.
         When not given computes values for walking, cycle and car.
@@ -117,5 +117,5 @@ def mapping_call(lat: float, lon: float, radius: int = 1000, location_type: str 
                         (also all profiles from https://giscience.github.io/openrouteservice-r/reference/ors_profile.html)
     :return: Dictionaries with five keys: name, lon, lat, distance and duration.
     """
-    locs = get_locations(lat, lon, radius, location_type)[:40]
-    return [{**l, **get_way(lat, lon, l['lat'], l['lon'], mobility_mode)} for l in locs]
+    locs = get_locations(lat, lon, radius, location_type)[:20]
+    return [{**l, **(get_way(lat, lon, l['lat'], l['lon'], mobility_mode)[0])} for l in locs]
