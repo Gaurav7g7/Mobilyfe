@@ -11,7 +11,7 @@ def ics_extract_events(ics_path : Union[str,Path]) -> List:
     """
     Loads an ics file and extract subject and start/end times from all events.
 
-    :param ics_path:
+    :param ics_path: Path of the ics file, from which the events should be extracted.
     :return: List with the event data.
     """
 
@@ -29,13 +29,15 @@ def ics_extract_events(ics_path : Union[str,Path]) -> List:
     return events
 
 
-def add_events(events: List, user_id : str, MongoDBclient: Optional[MongoClient] = None):
+def add_events(events: List, user_id : str, MongoDBclient: Optional[MongoClient] = None) -> None:
     """
     Adds a list of events to the MongoDB database. Also have duplicate detection.
 
-    :param events:
-    :param user_id:
-    :param MongoDBclient:
+    :param events: List of tuples, which represent the events.
+        Each tuple must have three entries. (Subject, start time, end time)
+    :param user_id: Unique number that represents the user for which the events should be added.
+    :param MongoDBclient: (optional) MongoDBClient that is used to access the database.
+         When not given a client with the default config is used (localhost:27017)
     """
 
     if MongoDBclient is None:
@@ -73,6 +75,15 @@ def add_events(events: List, user_id : str, MongoDBclient: Optional[MongoClient]
 
 
 def output_events(user_id : str, MongoDBclient: Optional[MongoClient] = None):
+    """
+    Accesses the database and returns a list with all events of a certain user.
+
+    :param user_id: Unique number that represents the user for which the events should be retrieved.
+    :param MongoDBclient: (optional) MongoDBClient that is used to access the database.
+     When not given a client with the default config is used (localhost:27017)
+    :return: List consisting of Tuples which represent the events.
+        A tuple has three entries. (Subject, start time, end time)
+    """
     if MongoDBclient is None:
         MongoDBclient = MongoClient('127.0.0.1', 27017)
 
