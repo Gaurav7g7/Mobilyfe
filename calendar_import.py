@@ -49,23 +49,18 @@ def add_events(events: List, user_id : str, MongoDBclient: Optional[MongoClient]
         post_events = query['events']
         replace = True
     else:
-        post_events = []
+        post_events = dict()
         replace = False
 
     appended = False
 
-    collision = {}
-    for event in post_events:
-        collision[list(event.keys())[0]] = True
-
     for data in events:
         data_hash = hashlib.sha1(bytes(str(data), 'utf-8')).hexdigest()
         try:
-            collision[data_hash]
+            post_events[str(data_hash)]
         except KeyError:
-            collision[data_hash] = True
             appended = True
-            post_events.append({str(data_hash): data})
+            post_events[str(data_hash)] = data
 
     if appended:
         post = {'_id': user_id, 'events': post_events}
@@ -77,9 +72,21 @@ def add_events(events: List, user_id : str, MongoDBclient: Optional[MongoClient]
             calendars.insert_one(post)
 
 
+def output_events(user_id : str, MongoDBclient: Optional[MongoClient] = None):
+    if MongoDBclient is None:
+        MongoDBclient = MongoClient('127.0.0.1', 27017)
+
+    calendars = MongoDBclient["Hack"]["Calendars"]
+
+    response = calendars.find({'_id': user_id})
+    return [v for _,v in response[0]['events'].items()]
+
+
 if __name__ == "__main__":
     ics_path = Path("./calendar.ics")
     user_id = '1354'
 
     events = ics_extract_events(ics_path)
     add_events(events, user_id)
+
+    print(output_events(user_id))
