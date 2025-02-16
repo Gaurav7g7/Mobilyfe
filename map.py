@@ -45,7 +45,7 @@ def get_locations(lat:float, lon: float, dist: int = 1000, location_type: str = 
     ret = []
 
     for node in result.nodes:
-        ret.append({'name' : node.tags['name'], 'lon' : node.lat, 'lat' : node.lon})
+        ret.append({'name' : node.tags['name'], 'lon' : node.lon, 'lat' : node.lat})
 
     return ret
 
@@ -79,10 +79,11 @@ def get_way(lat_start, lon_start, lat_target, lon_target, mobility_mode: str = N
 
     if mobility_mode is not None:
         try:
-            profile = list(profile[mapping[mobility_mode]])
+            profile = [profile[mapping[mobility_mode]],]
         except KeyError:
             profile = [mobility_mode,]
-    res = [dict()]
+    res = []
+
 
     for p in profile:
         url = f'https://api.openrouteservice.org/v2/directions/{p}'
@@ -95,8 +96,8 @@ def get_way(lat_start, lon_start, lat_target, lon_target, mobility_mode: str = N
             print(f'Request failed. Status Code: {status_code}')
             return [dict()]
 
-    for r in res:
-        print(r['distance'], r['duration'])
+    if len(res) == 0:
+        res = [dict()]
 
     return res
 
@@ -111,7 +112,7 @@ def mapping_call(lat: float, lon: float, radius: int = 1000, location_type: str 
     :param radius: Maximum distance of the locations from the selected point in m. Default: 1000
     :param location_type: (optional) Type of the location that is returned.
         Currently supported: restaurant (default), park, sports, socialize
-    :param mobility_mode: (optional) Can be used to select the current vehicle the user has.
+    :param mobility_mode: (optionl) Can be used to select the current vehicle the user has.
         When not given computes values for walking, cycle and car.
         Possible values: foot, cycle, car,
                         (also all profiles from https://giscience.github.io/openrouteservice-r/reference/ors_profile.html)
